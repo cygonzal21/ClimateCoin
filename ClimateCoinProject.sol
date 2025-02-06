@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol";
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 // Contrato principal de gestión de ClimateCoin
-contract GestionClimateCoin {
+    contract GestionClimateCoin {
     // Variable para almacenar el propietario del contrato
     address public owner;
 
     // Instancia del contrato ClimateCoin
-    ERC20 public climateCoin;
+    ClimateCoin public climateCoin;
 
     // Variables para gestionar las fees
+    uint256 public constant INITIAL_SUPPLY = 1000000 * 10 ** 18; // Suministro inicial de tokens
     uint256 public feePercentage = 2; // Fee inicial (en %)
 
     // Eventos
@@ -38,28 +39,32 @@ contract GestionClimateCoin {
         uint256 nftIdBurned
     );
 
-    // Errores 
+    // Errores personalizados
     error NotOwner();
     error InsufficientCC(uint256 available, uint256 required);
 
     // Constructor que inicializa el contrato
-    constructor(ERC20 _climateCoin) {
+    constructor() {
         owner = msg.sender; // El propietario es quien despliega el contrato
-        climateCoin = _climateCoin; // Asignamos la instancia del ClimateCoin
+        climateCoin = new ClimateCoin(INITIAL_SUPPLY); // Desplegamos el token ClimateCoin
+    }
+
+    // Modificador para restringir el acceso solo al propietario
+    modifier onlyOwner() {
+        if (msg.sender != owner) {
+            revert NotOwner();
+        }
+        _;
     }
 
     // Función para actualizar el porcentaje de fees (solo el propietario puede cambiarlo)
-    function setFeePercentage(uint256 newFeePercentage) external {
-        // Verificamos que el remitente es el propietario
-        if (msg.sender != owner) {
-            revert("Solo el propietario puede ejecutar esta funcion");
-        }
+    function setFeePercentage(uint256 newFeePercentage) external onlyOwner {
         feePercentage = newFeePercentage;
     }
 
     // Función para intercambiar un NFT por ClimateCoins
     function exchangeNFTForCC(address nftAddress, uint256 nftId) external {
-        ERC721 nftContract = ERC721(nftAddress);
+        IERC721 nftContract = IERC721(nftAddress);
 
         // Verificamos que el usuario es dueño del NFT
         require(nftContract.ownerOf(nftId) == msg.sender, "No eres el propietario del NFT");
@@ -87,7 +92,7 @@ contract GestionClimateCoin {
         uint256 nftId,
         uint256 ccAmount
     ) external {
-        ERC721 nftContract = ERC721(nftAddress);
+        IERC721 nftContract = IERC721(nftAddress);
 
         // Verificamos que el usuario sea el dueño del NFT
         require(nftContract.ownerOf(nftId) == msg.sender, "No eres el propietario del NFT");
@@ -108,3 +113,47 @@ contract GestionClimateCoin {
         emit CCBurned(msg.sender, ccAmount, nftId);
     }
 }
+
+// Contrato ClimateCoin (ERC-20 básico)
+contract ClimateCoin {
+    string public name = "ClimateCoin";
+    string public symbol = "CC";
+    uint8 public decimals = 18;
+    uint256 public totalSupply;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    constructor(uint256 initialSupply) {
+        totalSupply = initialSupply;
+        balanceOf[msg.sender] = initialSupply;
+    }
+
+    function transfer(address to, uint256 value) public returns (bool) {
+        require(balanceOf[msg.sender] >= value, "Saldo insuficiente");
+        balanceOf[msg.sender] -= value;
+        balanceOf[to] += value;
+        emit Transfer(msg.sender, to, value);
+        return true;
+    }
+
+    function approve(address spender, uint256 value) public returns (bool) {
+        allowance[msg.sender][spender] = value;
+        emit Approval(msg.sender, spender, value);
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 value) public returns (bool) {
+        require(balanceOf[from] >= value, "Saldo insuficiente");
+        require(allowance[from][msg.sender] >= value, "No autorizado");
+        balanceOf[from] -= value;
+        allowance[from][msg.sender] -= value;
+        balanceOf[to] += value;
+        emit Transfer(from, to, value);
+        return true;
+    }
+}
+
